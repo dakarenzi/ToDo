@@ -2,7 +2,7 @@
 
 A visually stunning, minimalist todo list application designed for focus and clarity.
 
-[cloudflarebutton]
+[![Deploy to Cloudflare](https://deploy.workers.cloudflare.com/button)](https://deploy.workers.cloudflare.com/?url=https://github.com/dakarenzi/ToDo)
 
 Clarity is a minimalist, visually stunning todo list application designed for focus and simplicity. Built on Cloudflare's edge network, it offers a lightning-fast, distraction-free experience. The core philosophy is 'less is more,' emphasizing clean layouts, generous white space, a limited and sophisticated color palette, and elegant typography. Users can add, manage, and complete tasks through a serene and intuitive interface. Interactions are enhanced with subtle, fluid animations to provide a delightful and responsive user experience. The application persists all tasks, ensuring user data is always available across sessions.
 
@@ -107,7 +107,7 @@ Deploying this application to Cloudflare is a simple, one-command process.
 
 Alternatively, you can deploy your own version of this project with a single click.
 
-[cloudflarebutton]
+[![Deploy to Cloudflare](https://deploy.workers.cloudflare.com/button)](https://deploy.workers.cloudflare.com/?url=https://github.com/dakarenzi/ToDo)
 
 ## License
 
