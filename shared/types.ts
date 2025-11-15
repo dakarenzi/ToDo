@@ -16,4 +16,5 @@ export interface Todo {
   dueDate?: string;
   startTime?: string;
   endTime?: string;
+  order?: number;
 }

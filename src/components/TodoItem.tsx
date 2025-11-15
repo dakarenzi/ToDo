@@ -1,8 +1,10 @@
 import React, { useState, useEffect } from 'react';
 import { motion } from 'framer-motion';
 import { format } from 'date-fns';
-import { Calendar as CalendarIcon, Clock, X, Save, Edit } from 'lucide-react';
+import { Calendar as CalendarIcon, Clock, X, Save, Edit, GripVertical } from 'lucide-react';
 import { UseMutationResult } from '@tanstack/react-query';
+import { useSortable } from '@dnd-kit/sortable';
+import { CSS } from '@dnd-kit/utilities';
 import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
 import { Checkbox } from '@/components/ui/checkbox';
@@ -24,6 +26,19 @@ export function TodoItem({ todo, updateTodoMutation, deleteTodoMutation, isFirst
   );
   const [editStartTime, setEditStartTime] = useState(todo.startTime || '');
   const [editEndTime, setEditEndTime] = useState(todo.endTime || '');
+  const {
+    attributes,
+    listeners,
+    setNodeRef,
+    transform,
+    transition,
+    isDragging,
+  } = useSortable({ id: todo.id });
+  const style = {
+    transform: CSS.Transform.toString(transform),
+    transition,
+    zIndex: isDragging ? 10 : 'auto',
+  };
   useEffect(() => {
     if (!isEditing) {
       setEditText(todo.text);
@@ -56,14 +71,19 @@ export function TodoItem({ todo, updateTodoMutation, deleteTodoMutation, isFirst
   };
   return (
     <motion.div
+      ref={setNodeRef}
+      style={style}
       layout
       initial={{ opacity: 0, y: 20 }}
       animate={{ opacity: 1, y: 0 }}
       exit={{ opacity: 0, x: -20 }}
       transition={{ duration: 0.2 }}
-      className={cn("group", !isFirst && "border-t")}
+      className={cn("group relative bg-card", !isFirst && "border-t", isDragging && "shadow-lg")}
     >
       <div className="flex items-start p-4 hover:bg-accent transition-colors duration-200">
+        <div {...attributes} {...listeners} className="touch-none cursor-grab p-2 -ml-2 mr-2">
+          <GripVertical className="h-5 w-5 text-muted-foreground" />
+        </div>
         <Checkbox
           id={`todo-${todo.id}`}
           checked={todo.completed}

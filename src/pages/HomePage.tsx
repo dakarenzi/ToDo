@@ -5,6 +5,8 @@ import { v4 as uuidv4 } from 'uuid';
 import { Check, Plus, Calendar as CalendarIcon } from 'lucide-react';
 import { Toaster, toast } from 'sonner';
 import { format } from 'date-fns';
+import { DndContext, closestCenter, KeyboardSensor, PointerSensor, useSensor, useSensors, DragEndEvent } from '@dnd-kit/core';
+import { arrayMove, SortableContext, sortableKeyboardCoordinates, verticalListSortingStrategy } from '@dnd-kit/sortable';
 import { ThemeToggle } from '@/components/ThemeToggle';
 import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
@@ -84,6 +86,10 @@ export function HomePage() {
     mutationFn: () => apiCall('/api/todos/clear-completed', 'POST'),
     ...mutationOptions,
   });
+  const reorderTodosMutation = useMutation({
+    mutationFn: (orderedIds: string[]) => apiCall('/api/todos/reorder', 'POST', { orderedIds }),
+    ...mutationOptions,
+  });
   const handleAddTodo = (e: React.FormEvent) => {
     e.preventDefault();
     if (newTodoText.trim()) {
@@ -103,13 +109,28 @@ export function HomePage() {
     }
   };
   const filteredTodos = useMemo(() => {
-    const sortedTodos = [...todos].sort((a, b) => new Date(b.createdAt).getTime() - new Date(a.createdAt).getTime());
-    if (filter === 'active') return sortedTodos.filter(t => !t.completed);
-    if (filter === 'completed') return sortedTodos.filter(t => t.completed);
-    return sortedTodos;
+    if (filter === 'active') return todos.filter(t => !t.completed);
+    if (filter === 'completed') return todos.filter(t => t.completed);
+    return todos;
   }, [todos, filter]);
   const activeCount = useMemo(() => todos.filter(t => !t.completed).length, [todos]);
   const completedCount = todos.length - activeCount;
+  const sensors = useSensors(
+    useSensor(PointerSensor),
+    useSensor(KeyboardSensor, {
+      coordinateGetter: sortableKeyboardCoordinates,
+    })
+  );
+  function handleDragEnd(event: DragEndEvent) {
+    const { active, over } = event;
+    if (over && active.id !== over.id) {
+      const oldIndex = todos.findIndex((t) => t.id === active.id);
+      const newIndex = todos.findIndex((t) => t.id === over.id);
+      const reorderedTodos = arrayMove(todos, oldIndex, newIndex);
+      queryClient.setQueryData(['todos'], reorderedTodos);
+      reorderTodosMutation.mutate(reorderedTodos.map(t => t.id));
+    }
+  }
   return (
     <>
       <Toaster richColors position="bottom-right" />
@@ -170,17 +191,21 @@ export function HomePage() {
                   <p>Your task list is empty. Add a task to get started.</p>
                 </div>
               )}
-              <AnimatePresence>
-                {filteredTodos.map((todo, index) => (
-                  <TodoItem
-                    key={todo.id}
-                    todo={todo}
-                    updateTodoMutation={updateTodoMutation}
-                    deleteTodoMutation={deleteTodoMutation}
-                    isFirst={index === 0}
-                  />
-                ))}
-              </AnimatePresence>
+              <DndContext sensors={sensors} collisionDetection={closestCenter} onDragEnd={handleDragEnd}>
+                <SortableContext items={filteredTodos.map(t => t.id)} strategy={verticalListSortingStrategy}>
+                  <AnimatePresence>
+                    {filteredTodos.map((todo, index) => (
+                      <TodoItem
+                        key={todo.id}
+                        todo={todo}
+                        updateTodoMutation={updateTodoMutation}
+                        deleteTodoMutation={deleteTodoMutation}
+                        isFirst={index === 0}
+                      />
+                    ))}
+                  </AnimatePresence>
+                </SortableContext>
+              </DndContext>
               {todos.length > 0 && (
                 <footer className="flex items-center justify-between p-3 text-sm text-muted-foreground border-t">
                   <span>{activeCount} {activeCount === 1 ? 'item' : 'items'} left</span>

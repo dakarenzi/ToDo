@@ -11,6 +11,7 @@ const todoSchema = z.object({
     dueDate: z.string().optional(),
     startTime: z.string().optional(),
     endTime: z.string().optional(),
+    order: z.number().optional(),
 });
 const updateTodoSchema = z.object({
     text: z.string().min(1).optional(),
@@ -18,6 +19,9 @@ const updateTodoSchema = z.object({
     dueDate: z.string().optional(),
     startTime: z.string().optional(),
     endTime: z.string().optional(),
+});
+const reorderSchema = z.object({
+    orderedIds: z.array(z.string()),
 });
 export function userRoutes(app: Hono<{ Bindings: Env }>) {
     // Todos API
@@ -48,6 +52,12 @@ export function userRoutes(app: Hono<{ Bindings: Env }>) {
     app.post('/api/todos/clear-completed', async (c) => {
         const durableObjectStub = c.env.GlobalDurableObject.get(c.env.GlobalDurableObject.idFromName("global"));
         const data = await durableObjectStub.clearCompletedTodos();
+        return c.json({ success: true, data } satisfies ApiResponse<Todo[]>);
+    });
+    app.post('/api/todos/reorder', zValidator('json', reorderSchema), async (c) => {
+        const { orderedIds } = c.req.valid('json');
+        const durableObjectStub = c.env.GlobalDurableObject.get(c.env.GlobalDurableObject.idFromName("global"));
+        const data = await durableObjectStub.reorderTodos(orderedIds);
         return c.json({ success: true, data } satisfies ApiResponse<Todo[]>);
     });
 }
