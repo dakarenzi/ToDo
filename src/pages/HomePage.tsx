@@ -1,17 +1,17 @@
 import React, { useState, useMemo } from 'react';
 import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query';
-import { AnimatePresence, motion } from 'framer-motion';
+import { AnimatePresence } from 'framer-motion';
 import { v4 as uuidv4 } from 'uuid';
-import { Check, Plus, Trash2, X, Calendar as CalendarIcon, Clock } from 'lucide-react';
+import { Check, Plus, Calendar as CalendarIcon } from 'lucide-react';
 import { Toaster, toast } from 'sonner';
 import { format } from 'date-fns';
 import { ThemeToggle } from '@/components/ThemeToggle';
 import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
-import { Checkbox } from '@/components/ui/checkbox';
 import { Popover, PopoverContent, PopoverTrigger } from '@/components/ui/popover';
 import { Calendar } from '@/components/ui/calendar';
 import { cn } from '@/lib/utils';
+import { TodoItem } from '@/components/TodoItem';
 import type { Todo, ApiResponse } from '@shared/types';
 type FilterType = 'all' | 'active' | 'completed';
 const fetchTodos = async (): Promise<Todo[]> => {
@@ -72,8 +72,8 @@ export function HomePage() {
     },
   });
   const updateTodoMutation = useMutation({
-    mutationFn: ({ id, completed }: { id: string; completed: boolean }) =>
-      apiCall(`/api/todos/${id}`, 'PUT', { completed }),
+    mutationFn: (updatedTodo: Partial<Todo> & { id: string }) =>
+      apiCall(`/api/todos/${updatedTodo.id}`, 'PUT', updatedTodo),
     ...mutationOptions,
   });
   const deleteTodoMutation = useMutation({
@@ -103,9 +103,10 @@ export function HomePage() {
     }
   };
   const filteredTodos = useMemo(() => {
-    if (filter === 'active') return todos.filter(t => !t.completed);
-    if (filter === 'completed') return todos.filter(t => t.completed);
-    return todos;
+    const sortedTodos = [...todos].sort((a, b) => new Date(b.createdAt).getTime() - new Date(a.createdAt).getTime());
+    if (filter === 'active') return sortedTodos.filter(t => !t.completed);
+    if (filter === 'completed') return sortedTodos.filter(t => t.completed);
+    return sortedTodos;
   }, [todos, filter]);
   const activeCount = useMemo(() => todos.filter(t => !t.completed).length, [todos]);
   const completedCount = todos.length - activeCount;
@@ -171,53 +172,13 @@ export function HomePage() {
               )}
               <AnimatePresence>
                 {filteredTodos.map((todo, index) => (
-                  <motion.div
+                  <TodoItem
                     key={todo.id}
-                    layout
-                    initial={{ opacity: 0, y: 20 }}
-                    animate={{ opacity: 1, y: 0 }}
-                    exit={{ opacity: 0, x: -20 }}
-                    transition={{ duration: 0.2 }}
-                    className={cn("group", index !== 0 && "border-t")}
-                  >
-                    <div className="flex items-start p-4 hover:bg-accent transition-colors duration-200">
-                      <Checkbox
-                        id={`todo-${todo.id}`}
-                        checked={todo.completed}
-                        onCheckedChange={(checked) => updateTodoMutation.mutate({ id: todo.id, completed: !!checked })}
-                        className="h-6 w-6 rounded-full mt-1"
-                      />
-                      <div className="flex-grow px-4">
-                        <label
-                          htmlFor={`todo-${todo.id}`}
-                          className={cn(
-                            "text-lg cursor-pointer transition-colors",
-                            todo.completed ? "line-through text-muted-foreground" : "text-foreground"
-                          )}
-                        >
-                          {todo.text}
-                        </label>
-                        {(todo.dueDate || (todo.startTime && todo.endTime)) && (
-                          <div className="text-xs text-muted-foreground mt-1 flex items-center gap-2">
-                            {todo.dueDate && (
-                              <span className="flex items-center gap-1"><CalendarIcon className="h-3 w-3" /> {format(new Date(todo.dueDate), "MMM d")}</span>
-                            )}
-                            {todo.startTime && todo.endTime && (
-                              <span className="flex items-center gap-1"><Clock className="h-3 w-3" /> {todo.startTime} - {todo.endTime}</span>
-                            )}
-                          </div>
-                        )}
-                      </div>
-                      <Button
-                        variant="ghost"
-                        size="icon"
-                        className="h-8 w-8 rounded-full opacity-0 group-hover:opacity-100 transition-opacity"
-                        onClick={() => deleteTodoMutation.mutate(todo.id)}
-                      >
-                        <X className="h-4 w-4" />
-                      </Button>
-                    </div>
-                  </motion.div>
+                    todo={todo}
+                    updateTodoMutation={updateTodoMutation}
+                    deleteTodoMutation={deleteTodoMutation}
+                    isFirst={index === 0}
+                  />
                 ))}
               </AnimatePresence>
               {todos.length > 0 && (
