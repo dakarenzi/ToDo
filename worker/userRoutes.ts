@@ -8,10 +8,16 @@ const todoSchema = z.object({
     text: z.string().min(1),
     completed: z.boolean(),
     createdAt: z.string().datetime(),
+    dueDate: z.string().optional(),
+    startTime: z.string().optional(),
+    endTime: z.string().optional(),
 });
 const updateTodoSchema = z.object({
     text: z.string().min(1).optional(),
     completed: z.boolean().optional(),
+    dueDate: z.string().optional(),
+    startTime: z.string().optional(),
+    endTime: z.string().optional(),
 });
 export function userRoutes(app: Hono<{ Bindings: Env }>) {
     // Todos API

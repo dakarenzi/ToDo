@@ -13,4 +13,7 @@ export interface Todo {
   text: string;
   completed: boolean;
   createdAt: string;
+  dueDate?: string;
+  startTime?: string;
+  endTime?: string;
 }

@@ -2,13 +2,15 @@ import React, { useState, useMemo } from 'react';
 import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query';
 import { AnimatePresence, motion } from 'framer-motion';
 import { v4 as uuidv4 } from 'uuid';
-import { Check, Plus, Trash2, X } from 'lucide-react';
+import { Check, Plus, Trash2, X, Calendar as CalendarIcon, Clock } from 'lucide-react';
 import { Toaster, toast } from 'sonner';
+import { format } from 'date-fns';
 import { ThemeToggle } from '@/components/ThemeToggle';
 import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
 import { Checkbox } from '@/components/ui/checkbox';
-import { Separator } from '@/components/ui/separator';
+import { Popover, PopoverContent, PopoverTrigger } from '@/components/ui/popover';
+import { Calendar } from '@/components/ui/calendar';
 import { cn } from '@/lib/utils';
 import type { Todo, ApiResponse } from '@shared/types';
 type FilterType = 'all' | 'active' | 'completed';
@@ -33,6 +35,9 @@ const apiCall = async <T,>(url: string, method: string, body?: T): Promise<Todo[
 export function HomePage() {
   const queryClient = useQueryClient();
   const [newTodoText, setNewTodoText] = useState('');
+  const [dueDate, setDueDate] = useState<Date | undefined>();
+  const [startTime, setStartTime] = useState('');
+  const [endTime, setEndTime] = useState('');
   const [filter, setFilter] = useState<FilterType>('all');
   const { data: todos = [], isLoading, isError } = useQuery<Todo[]>({
     queryKey: ['todos'],
@@ -87,8 +92,14 @@ export function HomePage() {
         text: newTodoText.trim(),
         completed: false,
         createdAt: new Date().toISOString(),
+        dueDate: dueDate?.toISOString(),
+        startTime: startTime || undefined,
+        endTime: endTime || undefined,
       });
       setNewTodoText('');
+      setDueDate(undefined);
+      setStartTime('');
+      setEndTime('');
     }
   };
   const filteredTodos = useMemo(() => {
@@ -110,15 +121,43 @@ export function HomePage() {
             </h1>
           </header>
           <main className="space-y-6">
-            <form onSubmit={handleAddTodo} className="relative">
-              <Plus className="absolute left-4 top-1/2 -translate-y-1/2 h-5 w-5 text-muted-foreground" />
-              <Input
-                type="text"
-                value={newTodoText}
-                onChange={(e) => setNewTodoText(e.target.value)}
-                placeholder="What needs to be done?"
-                className="pl-12 h-14 text-lg rounded-lg shadow-sm focus:ring-2 focus:ring-blue-500 focus:ring-offset-2 focus:ring-offset-background"
-              />
+            <form onSubmit={handleAddTodo} className="space-y-3">
+              <div className="relative">
+                <Plus className="absolute left-4 top-1/2 -translate-y-1/2 h-5 w-5 text-muted-foreground" />
+                <Input
+                  type="text"
+                  value={newTodoText}
+                  onChange={(e) => setNewTodoText(e.target.value)}
+                  placeholder="What needs to be done?"
+                  className="pl-12 h-14 text-lg rounded-lg shadow-sm focus:ring-2 focus:ring-blue-500 focus:ring-offset-2 focus:ring-offset-background"
+                />
+              </div>
+              <div className="grid grid-cols-1 sm:grid-cols-3 gap-2">
+                <Popover>
+                  <PopoverTrigger asChild>
+                    <Button
+                      variant={"outline"}
+                      className={cn(
+                        "justify-start text-left font-normal h-11",
+                        !dueDate && "text-muted-foreground"
+                      )}
+                    >
+                      <CalendarIcon className="mr-2 h-4 w-4" />
+                      {dueDate ? format(dueDate, "PPP") : <span>Pick a date</span>}
+                    </Button>
+                  </PopoverTrigger>
+                  <PopoverContent className="w-auto p-0">
+                    <Calendar
+                      mode="single"
+                      selected={dueDate}
+                      onSelect={setDueDate}
+                      initialFocus
+                    />
+                  </PopoverContent>
+                </Popover>
+                <Input type="time" value={startTime} onChange={e => setStartTime(e.target.value)} className="h-11" />
+                <Input type="time" value={endTime} onChange={e => setEndTime(e.target.value)} className="h-11" />
+              </div>
             </form>
             <div className="bg-card rounded-lg shadow-sm overflow-hidden">
               {isLoading && <div className="p-6 text-center text-muted-foreground">Loading tasks...</div>}
@@ -141,22 +180,34 @@ export function HomePage() {
                     transition={{ duration: 0.2 }}
                     className={cn("group", index !== 0 && "border-t")}
                   >
-                    <div className="flex items-center p-4 hover:bg-accent transition-colors duration-200">
+                    <div className="flex items-start p-4 hover:bg-accent transition-colors duration-200">
                       <Checkbox
                         id={`todo-${todo.id}`}
                         checked={todo.completed}
                         onCheckedChange={(checked) => updateTodoMutation.mutate({ id: todo.id, completed: !!checked })}
-                        className="h-6 w-6 rounded-full"
+                        className="h-6 w-6 rounded-full mt-1"
                       />
-                      <label
-                        htmlFor={`todo-${todo.id}`}
-                        className={cn(
-                          "flex-grow px-4 text-lg cursor-pointer transition-colors",
-                          todo.completed ? "line-through text-muted-foreground" : "text-foreground"
+                      <div className="flex-grow px-4">
+                        <label
+                          htmlFor={`todo-${todo.id}`}
+                          className={cn(
+                            "text-lg cursor-pointer transition-colors",
+                            todo.completed ? "line-through text-muted-foreground" : "text-foreground"
+                          )}
+                        >
+                          {todo.text}
+                        </label>
+                        {(todo.dueDate || (todo.startTime && todo.endTime)) && (
+                          <div className="text-xs text-muted-foreground mt-1 flex items-center gap-2">
+                            {todo.dueDate && (
+                              <span className="flex items-center gap-1"><CalendarIcon className="h-3 w-3" /> {format(new Date(todo.dueDate), "MMM d")}</span>
+                            )}
+                            {todo.startTime && todo.endTime && (
+                              <span className="flex items-center gap-1"><Clock className="h-3 w-3" /> {todo.startTime} - {todo.endTime}</span>
+                            )}
+                          </div>
                         )}
-                      >
-                        {todo.text}
-                      </label>
+                      </div>
                       <Button
                         variant="ghost"
                         size="icon"
