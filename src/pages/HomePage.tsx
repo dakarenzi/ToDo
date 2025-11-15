@@ -1,8 +1,8 @@
-import React, { useState, useMemo } from 'react';
+import React, { useState, useMemo, useEffect } from 'react';
 import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query';
 import { AnimatePresence } from 'framer-motion';
 import { v4 as uuidv4 } from 'uuid';
-import { Check, Plus, Calendar as CalendarIcon, Search } from 'lucide-react';
+import { Check, Plus, Calendar as CalendarIcon, Search, Cog, Inbox } from 'lucide-react';
 import { Toaster, toast } from 'sonner';
 import { format } from 'date-fns';
 import { DndContext, closestCenter, KeyboardSensor, PointerSensor, useSensor, useSensors, DragEndEvent } from '@dnd-kit/core';
@@ -26,6 +26,7 @@ import {
 } from "@/components/ui/alert-dialog";
 import { cn } from '@/lib/utils';
 import { TodoItem } from '@/components/TodoItem';
+import { SettingsSheet, AppSettings } from '@/components/SettingsSheet';
 import type { Todo, ApiResponse, Priority } from '@shared/types';
 type FilterType = 'all' | 'active' | 'completed';
 type SortByType = 'manual' | 'dueDate' | 'priority' | 'createdAt';
@@ -63,6 +64,11 @@ export function HomePage() {
   const [sortBy, setSortBy] = useState<SortByType>('manual');
   const [groupBy, setGroupBy] = useState<GroupByType>('none');
   const [isClearConfirmOpen, setClearConfirmOpen] = useState(false);
+  const [isSettingsOpen, setSettingsOpen] = useState(false);
+  const [settings, setSettings] = useState<AppSettings>({ defaultPriority: 'none' });
+  useEffect(() => {
+    setNewPriority(settings.defaultPriority);
+  }, [settings.defaultPriority]);
   const { data: todos = [], isLoading, isError } = useQuery<Todo[]>({
     queryKey: ['todos'],
     queryFn: fetchTodos,
@@ -131,7 +137,7 @@ export function HomePage() {
       setDueDate(undefined);
       setStartTime('');
       setEndTime('');
-      setNewPriority('none');
+      setNewPriority(settings.defaultPriority);
       setNewTags('');
     }
   };
@@ -167,7 +173,7 @@ export function HomePage() {
     }
     // 3. Group
     if (groupBy !== 'none') {
-      return processed.reduce((acc, todo) => {
+      const grouped = processed.reduce((acc, todo) => {
         let key = 'Uncategorized';
         if (groupBy === 'priority') {
           key = priorityLabels[todo.priority || 'none'];
@@ -178,6 +184,25 @@ export function HomePage() {
         acc[key].push(todo);
         return acc;
       }, {} as Record<string, Todo[]>);
+      // Sort groups by key
+      const sortedGroupKeys = Object.keys(grouped).sort((a, b) => {
+        if (groupBy === 'dueDate') {
+          if (a === 'No Due Date') return 1;
+          if (b === 'No Due Date') return -1;
+          return new Date(a).getTime() - new Date(b).getTime();
+        }
+        if (groupBy === 'priority') {
+          const priorityA = Object.keys(priorityLabels).find(key => priorityLabels[key as Priority] === a) as Priority || 'none';
+          const priorityB = Object.keys(priorityLabels).find(key => priorityLabels[key as Priority] === b) as Priority || 'none';
+          return priorityOrder[priorityB] - priorityOrder[priorityA];
+        }
+        return a.localeCompare(b);
+      });
+      const sortedGrouped: Record<string, Todo[]> = {};
+      for (const key of sortedGroupKeys) {
+        sortedGrouped[key] = grouped[key];
+      }
+      return sortedGrouped;
     }
     return processed;
   }, [todos, filter, searchTerm, sortBy, groupBy]);
@@ -212,16 +237,21 @@ export function HomePage() {
       ))}
     </AnimatePresence>
   );
+  const hasNoResults = todos.length > 0 && (Array.isArray(processedTodos) ? processedTodos.length === 0 : Object.keys(processedTodos).length === 0);
   return (
     <>
       <Toaster richColors position="bottom-right" />
       <ThemeToggle className="fixed top-4 right-4" />
+      <SettingsSheet open={isSettingsOpen} onOpenChange={setSettingsOpen} settings={settings} onSettingsChange={setSettings} />
       <div className="min-h-screen bg-background text-foreground font-sans flex flex-col items-center">
         <div className="w-full max-w-2xl mx-auto px-4 sm:px-6 py-12 md:py-24 flex-grow">
-          <header className="text-center mb-10">
+          <header className="text-center mb-10 relative">
             <h1 className="text-5xl md:text-7xl font-bold tracking-tighter text-foreground/90">
               Clarity
             </h1>
+            <Button variant="ghost" size="icon" className="absolute top-0 right-0 -mt-2" onClick={() => setSettingsOpen(true)}>
+              <Cog className="h-5 w-5" />
+            </Button>
           </header>
           <main className="space-y-6">
             <form onSubmit={handleAddTodo} className="space-y-3">
@@ -317,28 +347,36 @@ export function HomePage() {
                 </Select>
               </div>
             </div>
-            <div className="bg-card rounded-lg shadow-sm overflow-hidden">
+            <div className="bg-card rounded-lg shadow-sm overflow-hidden min-h-[10rem]">
               {isLoading && <div className="p-6 text-center text-muted-foreground">Loading tasks...</div>}
               {isError && <div className="p-6 text-center text-red-500">Error loading tasks.</div>}
               {!isLoading && !isError && todos.length === 0 && (
-                <div className="p-10 text-center text-muted-foreground animate-fade-in">
+                <div className="p-10 text-center text-muted-foreground animate-fade-in flex flex-col items-center justify-center h-full">
                   <Check className="mx-auto h-12 w-12 text-green-500 mb-4" />
                   <h3 className="text-lg font-medium text-foreground">All clear!</h3>
                   <p>Your task list is empty. Add a task to get started.</p>
                 </div>
               )}
-              {sortBy !== 'manual' && groupBy === 'none' && (
+              {hasNoResults && (
+                <div className="p-10 text-center text-muted-foreground animate-fade-in flex flex-col items-center justify-center h-full">
+                  <Inbox className="mx-auto h-12 w-12 text-muted-foreground mb-4" />
+                  <h3 className="text-lg font-medium text-foreground">No results found</h3>
+                  <p>Try adjusting your search or filter criteria.</p>
+                </div>
+              )}
+              {!hasNoResults && sortBy !== 'manual' && groupBy === 'none' && (
                 <div className="p-2 text-center text-xs text-muted-foreground bg-accent">
                   Drag-and-drop is disabled while a sort order is active.
                 </div>
               )}
-              {Array.isArray(processedTodos) ? (
-                <DndContext sensors={sensors} collisionDetection={closestCenter} onDragEnd={handleDragEnd} enabled={sortBy === 'manual'}>
+              {!hasNoResults && Array.isArray(processedTodos) ? (
+                <DndContext sensors={sensors} collisionDetection={closestCenter} onDragEnd={handleDragEnd}>
                   <SortableContext items={processedTodos.map(t => t.id)} strategy={verticalListSortingStrategy} disabled={sortBy !== 'manual'}>
                     {renderTodoList(processedTodos)}
                   </SortableContext>
                 </DndContext>
-              ) : (
+              ) : null}
+              {!hasNoResults && !Array.isArray(processedTodos) ? (
                 <Accordion type="multiple" className="w-full" defaultValue={Object.keys(processedTodos)}>
                   {Object.entries(processedTodos).map(([groupTitle, groupTodos]) => (
                     <AccordionItem value={groupTitle} key={groupTitle}>
@@ -351,7 +389,7 @@ export function HomePage() {
                     </AccordionItem>
                   ))}
                 </Accordion>
-              )}
+              ) : null}
               {todos.length > 0 && (
                 <footer className="flex items-center justify-between p-3 text-sm text-muted-foreground border-t">
                   <span>{activeCount} {activeCount === 1 ? 'item' : 'items'} left</span>
