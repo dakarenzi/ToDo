@@ -12,6 +12,16 @@ import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
 import { Popover, PopoverContent, PopoverTrigger } from '@/components/ui/popover';
 import { Calendar } from '@/components/ui/calendar';
+import {
+  AlertDialog,
+  AlertDialogAction,
+  AlertDialogCancel,
+  AlertDialogContent,
+  AlertDialogDescription,
+  AlertDialogFooter,
+  AlertDialogHeader,
+  AlertDialogTitle,
+} from "@/components/ui/alert-dialog";
 import { cn } from '@/lib/utils';
 import { TodoItem } from '@/components/TodoItem';
 import type { Todo, ApiResponse } from '@shared/types';
@@ -41,6 +51,7 @@ export function HomePage() {
   const [startTime, setStartTime] = useState('');
   const [endTime, setEndTime] = useState('');
   const [filter, setFilter] = useState<FilterType>('all');
+  const [isClearConfirmOpen, setClearConfirmOpen] = useState(false);
   const { data: todos = [], isLoading, isError } = useQuery<Todo[]>({
     queryKey: ['todos'],
     queryFn: fetchTodos,
@@ -217,7 +228,7 @@ export function HomePage() {
                   <Button
                     variant="ghost"
                     size="sm"
-                    onClick={() => clearCompletedMutation.mutate()}
+                    onClick={() => setClearConfirmOpen(true)}
                     disabled={completedCount === 0}
                     className={cn(completedCount === 0 && "invisible")}
                   >
@@ -236,9 +247,25 @@ export function HomePage() {
           </main>
         </div>
         <footer className="w-full text-center py-6 text-xs text-muted-foreground">
-          <p>Built with ❤️ at Cloudflare</p>
+          <p>Built with ❤�� at Cloudflare</p>
         </footer>
       </div>
+      <AlertDialog open={isClearConfirmOpen} onOpenChange={setClearConfirmOpen}>
+        <AlertDialogContent>
+          <AlertDialogHeader>
+            <AlertDialogTitle>Are you sure?</AlertDialogTitle>
+            <AlertDialogDescription>
+              This will permanently delete all completed tasks. This action cannot be undone.
+            </AlertDialogDescription>
+          </AlertDialogHeader>
+          <AlertDialogFooter>
+            <AlertDialogCancel>Cancel</AlertDialogCancel>
+            <AlertDialogAction onClick={() => clearCompletedMutation.mutate()}>
+              Continue
+            </AlertDialogAction>
+          </AlertDialogFooter>
+        </AlertDialogContent>
+      </AlertDialog>
     </>
   );
 }
