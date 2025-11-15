@@ -1,50 +1,47 @@
 import { Hono } from "hono";
+import { z } from 'zod';
+import { zValidator } from '@hono/zod-validator';
 import { Env } from './core-utils';
-import type { DemoItem, ApiResponse } from '@shared/types';
-
+import type { Todo, ApiResponse } from '@shared/types';
+const todoSchema = z.object({
+    id: z.string(),
+    text: z.string().min(1),
+    completed: z.boolean(),
+    createdAt: z.string().datetime(),
+});
+const updateTodoSchema = z.object({
+    text: z.string().min(1).optional(),
+    completed: z.boolean().optional(),
+});
 export function userRoutes(app: Hono<{ Bindings: Env }>) {
-    app.get('/api/test', (c) => c.json({ success: true, data: { name: 'CF Workers Demo' }}));
-
-    // Demo items endpoint using Durable Object storage
-    app.get('/api/demo', async (c) => {
+    // Todos API
+    app.get('/api/todos', async (c) => {
         const durableObjectStub = c.env.GlobalDurableObject.get(c.env.GlobalDurableObject.idFromName("global"));
-        const data = await durableObjectStub.getDemoItems();
-        return c.json({ success: true, data } satisfies ApiResponse<DemoItem[]>);
+        const data = await durableObjectStub.getTodos();
+        return c.json({ success: true, data } satisfies ApiResponse<Todo[]>);
     });
-
-    // Counter using Durable Object
-    app.get('/api/counter', async (c) => {
+    app.post('/api/todos', zValidator('json', todoSchema), async (c) => {
+        const todo = c.req.valid('json');
         const durableObjectStub = c.env.GlobalDurableObject.get(c.env.GlobalDurableObject.idFromName("global"));
-        const data = await durableObjectStub.getCounterValue();
-        return c.json({ success: true, data } satisfies ApiResponse<number>);
+        const data = await durableObjectStub.addTodo(todo);
+        return c.json({ success: true, data } satisfies ApiResponse<Todo[]>);
     });
-    
-    app.post('/api/counter/increment', async (c) => {
-        const durableObjectStub = c.env.GlobalDurableObject.get(c.env.GlobalDurableObject.idFromName("global"));
-        const data = await durableObjectStub.increment();
-        return c.json({ success: true, data } satisfies ApiResponse<number>);
-    });
-
-    // Demo item management endpoints
-    app.post('/api/demo', async (c) => {
-        const body = await c.req.json() as DemoItem;
-        const durableObjectStub = c.env.GlobalDurableObject.get(c.env.GlobalDurableObject.idFromName("global"));
-        const data = await durableObjectStub.addDemoItem(body);
-        return c.json({ success: true, data } satisfies ApiResponse<DemoItem[]>);
-    });
-
-    app.put('/api/demo/:id', async (c) => {
+    app.put('/api/todos/:id', zValidator('json', updateTodoSchema), async (c) => {
         const id = c.req.param('id');
-        const body = await c.req.json() as Partial<Omit<DemoItem, 'id'>>;
+        const body = c.req.valid('json');
         const durableObjectStub = c.env.GlobalDurableObject.get(c.env.GlobalDurableObject.idFromName("global"));
-        const data = await durableObjectStub.updateDemoItem(id, body);
-        return c.json({ success: true, data } satisfies ApiResponse<DemoItem[]>);
+        const data = await durableObjectStub.updateTodo(id, body);
+        return c.json({ success: true, data } satisfies ApiResponse<Todo[]>);
     });
-
-    app.delete('/api/demo/:id', async (c) => {
+    app.delete('/api/todos/:id', async (c) => {
         const id = c.req.param('id');
         const durableObjectStub = c.env.GlobalDurableObject.get(c.env.GlobalDurableObject.idFromName("global"));
-        const data = await durableObjectStub.deleteDemoItem(id);
-        return c.json({ success: true, data } satisfies ApiResponse<DemoItem[]>);
+        const data = await durableObjectStub.deleteTodo(id);
+        return c.json({ success: true, data } satisfies ApiResponse<Todo[]>);
+    });
+    app.post('/api/todos/clear-completed', async (c) => {
+        const durableObjectStub = c.env.GlobalDurableObject.get(c.env.GlobalDurableObject.idFromName("global"));
+        const data = await durableObjectStub.clearCompletedTodos();
+        return c.json({ success: true, data } satisfies ApiResponse<Todo[]>);
     });
 }

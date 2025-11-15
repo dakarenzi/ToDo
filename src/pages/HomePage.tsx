@@ -1,148 +1,207 @@
-// Home page of the app, Currently a demo page for demonstration.
-// Please rewrite this file to implement your own logic. Do not replace or delete it, simply rewrite this HomePage.tsx file.
-import { useEffect } from 'react'
-import { Sparkles } from 'lucide-react'
-import { Button } from '@/components/ui/button'
-import { ThemeToggle } from '@/components/ThemeToggle'
-import { Toaster, toast } from '@/components/ui/sonner'
-import { create } from 'zustand'
-import { useShallow } from 'zustand/react/shallow'
-import { AppLayout } from '@/components/layout/AppLayout'
-
-// Timer store: independent slice with a clear, minimal API, for demonstration
-type TimerState = {
-  isRunning: boolean;
-  elapsedMs: number;
-  start: () => void;
-  pause: () => void;
-  reset: () => void;
-  tick: (deltaMs: number) => void;
-}
-
-const useTimerStore = create<TimerState>((set) => ({
-  isRunning: false,
-  elapsedMs: 0,
-  start: () => set({ isRunning: true }),
-  pause: () => set({ isRunning: false }),
-  reset: () => set({ elapsedMs: 0, isRunning: false }),
-  tick: (deltaMs) => set((s) => ({ elapsedMs: s.elapsedMs + deltaMs })),
-}))
-
-// Counter store: separate slice to showcase multiple stores without coupling
-type CounterState = {
-  count: number;
-  inc: () => void;
-  reset: () => void;
-}
-
-const useCounterStore = create<CounterState>((set) => ({
-  count: 0,
-  inc: () => set((s) => ({ count: s.count + 1 })),
-  reset: () => set({ count: 0 }),
-}))
-
-function formatDuration(ms: number): string {
-  const total = Math.max(0, Math.floor(ms / 1000))
-  const m = Math.floor(total / 60)
-  const s = total % 60
-  return `${m}:${s.toString().padStart(2, '0')}`
-}
-
+import React, { useState, useMemo } from 'react';
+import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query';
+import { AnimatePresence, motion } from 'framer-motion';
+import { v4 as uuidv4 } from 'uuid';
+import { Check, Plus, Trash2, X } from 'lucide-react';
+import { Toaster, toast } from 'sonner';
+import { ThemeToggle } from '@/components/ThemeToggle';
+import { Button } from '@/components/ui/button';
+import { Input } from '@/components/ui/input';
+import { Checkbox } from '@/components/ui/checkbox';
+import { Separator } from '@/components/ui/separator';
+import { cn } from '@/lib/utils';
+import type { Todo, ApiResponse } from '@shared/types';
+type FilterType = 'all' | 'active' | 'completed';
+const fetchTodos = async (): Promise<Todo[]> => {
+  const res = await fetch('/api/todos');
+  if (!res.ok) throw new Error('Network response was not ok');
+  const data: ApiResponse<Todo[]> = await res.json();
+  if (!data.success) throw new Error(data.error || 'Failed to fetch todos');
+  return data.data || [];
+};
+const apiCall = async <T>(url: string, method: string, body?: T): Promise<Todo[]> => {
+  const res = await fetch(url, {
+    method,
+    headers: { 'Content-Type': 'application/json' },
+    body: body ? JSON.stringify(body) : undefined,
+  });
+  if (!res.ok) throw new Error('Network response was not ok');
+  const data: ApiResponse<Todo[]> = await res.json();
+  if (!data.success) throw new Error(data.error || 'API call failed');
+  return data.data || [];
+};
 export function HomePage() {
-  // Select only what is needed to avoid unnecessary re-renders
-  const { isRunning, elapsedMs } = useTimerStore(
-    useShallow((s) => ({ isRunning: s.isRunning, elapsedMs: s.elapsedMs })),
-  )
-  const start = useTimerStore((s) => s.start)
-  const pause = useTimerStore((s) => s.pause)
-  const resetTimer = useTimerStore((s) => s.reset)
-  const count = useCounterStore((s) => s.count)
-  const inc = useCounterStore((s) => s.inc)
-  const resetCount = useCounterStore((s) => s.reset)
-
-  // Drive the timer only while running; avoid update-depth issues with a scoped RAF
-  useEffect(() => {
-    if (!isRunning) return
-    let raf = 0
-    let last = performance.now()
-    const loop = () => {
-      const now = performance.now()
-      const delta = now - last
-      last = now
-      // Read store API directly to keep effect deps minimal and stable
-      useTimerStore.getState().tick(delta)
-      raf = requestAnimationFrame(loop)
+  const queryClient = useQueryClient();
+  const [newTodoText, setNewTodoText] = useState('');
+  const [filter, setFilter] = useState<FilterType>('all');
+  const { data: todos = [], isLoading, isError } = useQuery<Todo[]>({
+    queryKey: ['todos'],
+    queryFn: fetchTodos,
+  });
+  const mutationOptions = {
+    onSuccess: (data: Todo[]) => {
+      queryClient.setQueryData(['todos'], data);
+    },
+    onError: (error: Error) => {
+      toast.error(error.message || "An unexpected error occurred.");
+      queryClient.invalidateQueries({ queryKey: ['todos'] });
+    },
+  };
+  const addTodoMutation = useMutation({
+    mutationFn: (newTodo: Todo) => apiCall('/api/todos', 'POST', newTodo),
+    ...mutationOptions,
+    onMutate: async (newTodo: Todo) => {
+      await queryClient.cancelQueries({ queryKey: ['todos'] });
+      const previousTodos = queryClient.getQueryData<Todo[]>(['todos']);
+      queryClient.setQueryData<Todo[]>(['todos'], (old = []) => [...old, newTodo]);
+      return { previousTodos };
+    },
+    onError: (err, newTodo, context) => {
+      if (context?.previousTodos) {
+        queryClient.setQueryData(['todos'], context.previousTodos);
+      }
+      toast.error("Failed to add task.");
+    },
+    onSettled: () => {
+      queryClient.invalidateQueries({ queryKey: ['todos'] });
+    },
+  });
+  const updateTodoMutation = useMutation({
+    mutationFn: ({ id, completed }: { id: string; completed: boolean }) =>
+      apiCall(`/api/todos/${id}`, 'PUT', { completed }),
+    ...mutationOptions,
+  });
+  const deleteTodoMutation = useMutation({
+    mutationFn: (id: string) => apiCall(`/api/todos/${id}`, 'DELETE'),
+    ...mutationOptions,
+  });
+  const clearCompletedMutation = useMutation({
+    mutationFn: () => apiCall('/api/todos/clear-completed', 'POST'),
+    ...mutationOptions,
+  });
+  const handleAddTodo = (e: React.FormEvent) => {
+    e.preventDefault();
+    if (newTodoText.trim()) {
+      addTodoMutation.mutate({
+        id: uuidv4(),
+        text: newTodoText.trim(),
+        completed: false,
+        createdAt: new Date().toISOString(),
+      });
+      setNewTodoText('');
     }
-    raf = requestAnimationFrame(loop)
-    return () => cancelAnimationFrame(raf)
-  }, [isRunning])
-
-  const onPleaseWait = () => {
-    inc()
-    if (!isRunning) {
-      start()
-      toast.success('Building your app…', {
-        description: 'Hang tight, we\'re setting everything up.',
-      })
-    } else {
-      pause()
-      toast.info('Taking a short pause', {
-        description: 'We\'ll continue shortly.',
-      })
-    }
-  }
-
-  const formatted = formatDuration(elapsedMs)
-
+  };
+  const filteredTodos = useMemo(() => {
+    if (filter === 'active') return todos.filter(t => !t.completed);
+    if (filter === 'completed') return todos.filter(t => t.completed);
+    return todos;
+  }, [todos, filter]);
+  const activeCount = useMemo(() => todos.filter(t => !t.completed).length, [todos]);
+  const completedCount = todos.length - activeCount;
   return (
-    <AppLayout>
-      <div className="min-h-screen flex flex-col items-center justify-center bg-background text-foreground p-4 overflow-hidden relative">
-        <ThemeToggle />
-        <div className="absolute inset-0 bg-gradient-rainbow opacity-10 dark:opacity-20 pointer-events-none" />
-        <div className="text-center space-y-8 relative z-10 animate-fade-in">
-          <div className="flex justify-center">
-            <div className="w-16 h-16 rounded-2xl bg-gradient-primary flex items-center justify-center shadow-primary floating">
-              <Sparkles className="w-8 h-8 text-white rotating" />
+    <>
+      <Toaster richColors position="bottom-right" />
+      <ThemeToggle className="fixed top-4 right-4" />
+      <div className="min-h-screen bg-background text-foreground font-sans flex flex-col items-center">
+        <div className="w-full max-w-2xl mx-auto px-4 sm:px-6 py-12 md:py-24 flex-grow">
+          <header className="text-center mb-10">
+            <h1 className="text-5xl md:text-7xl font-bold tracking-tighter text-foreground/90">
+              Clarity
+            </h1>
+          </header>
+          <main className="space-y-6">
+            <form onSubmit={handleAddTodo} className="relative">
+              <Plus className="absolute left-4 top-1/2 -translate-y-1/2 h-5 w-5 text-muted-foreground" />
+              <Input
+                type="text"
+                value={newTodoText}
+                onChange={(e) => setNewTodoText(e.target.value)}
+                placeholder="What needs to be done?"
+                className="pl-12 h-14 text-lg rounded-lg shadow-sm focus:ring-2 focus:ring-blue-500 focus:ring-offset-2 focus:ring-offset-background"
+              />
+            </form>
+            <div className="bg-card rounded-lg shadow-sm overflow-hidden">
+              {isLoading && <div className="p-6 text-center text-muted-foreground">Loading tasks...</div>}
+              {isError && <div className="p-6 text-center text-red-500">Error loading tasks.</div>}
+              {!isLoading && !isError && todos.length === 0 && (
+                <div className="p-10 text-center text-muted-foreground animate-fade-in">
+                  <Check className="mx-auto h-12 w-12 text-green-500 mb-4" />
+                  <h3 className="text-lg font-medium text-foreground">All clear!</h3>
+                  <p>Your task list is empty. Add a task to get started.</p>
+                </div>
+              )}
+              <AnimatePresence>
+                {filteredTodos.map((todo, index) => (
+                  <motion.div
+                    key={todo.id}
+                    layout
+                    initial={{ opacity: 0, y: 20 }}
+                    animate={{ opacity: 1, y: 0 }}
+                    exit={{ opacity: 0, x: -20 }}
+                    transition={{ duration: 0.2 }}
+                    className={cn("group", index !== 0 && "border-t")}
+                  >
+                    <div className="flex items-center p-4 hover:bg-accent transition-colors duration-200">
+                      <Checkbox
+                        id={`todo-${todo.id}`}
+                        checked={todo.completed}
+                        onCheckedChange={(checked) => updateTodoMutation.mutate({ id: todo.id, completed: !!checked })}
+                        className="h-6 w-6 rounded-full"
+                      />
+                      <label
+                        htmlFor={`todo-${todo.id}`}
+                        className={cn(
+                          "flex-grow px-4 text-lg cursor-pointer transition-colors",
+                          todo.completed ? "line-through text-muted-foreground" : "text-foreground"
+                        )}
+                      >
+                        {todo.text}
+                      </label>
+                      <Button
+                        variant="ghost"
+                        size="icon"
+                        className="h-8 w-8 rounded-full opacity-0 group-hover:opacity-100 transition-opacity"
+                        onClick={() => deleteTodoMutation.mutate(todo.id)}
+                      >
+                        <X className="h-4 w-4" />
+                      </Button>
+                    </div>
+                  </motion.div>
+                ))}
+              </AnimatePresence>
+              {todos.length > 0 && (
+                <footer className="flex items-center justify-between p-3 text-sm text-muted-foreground border-t">
+                  <span>{activeCount} {activeCount === 1 ? 'item' : 'items'} left</span>
+                  <div className="hidden sm:flex items-center space-x-2">
+                    <Button variant={filter === 'all' ? 'secondary' : 'ghost'} size="sm" onClick={() => setFilter('all')}>All</Button>
+                    <Button variant={filter === 'active' ? 'secondary' : 'ghost'} size="sm" onClick={() => setFilter('active')}>Active</Button>
+                    <Button variant={filter === 'completed' ? 'secondary' : 'ghost'} size="sm" onClick={() => setFilter('completed')}>Completed</Button>
+                  </div>
+                  <Button
+                    variant="ghost"
+                    size="sm"
+                    onClick={() => clearCompletedMutation.mutate()}
+                    disabled={completedCount === 0}
+                    className={cn(completedCount === 0 && "invisible")}
+                  >
+                    Clear completed
+                  </Button>
+                </footer>
+              )}
             </div>
-          </div>
-          <h1 className="text-5xl md:text-7xl font-display font-bold text-balance leading-tight">
-            Creating your <span className="text-gradient">app</span>
-          </h1>
-          <p className="text-lg md:text-xl text-muted-foreground max-w-xl mx-auto text-pretty">
-            Your application would be ready soon.
-          </p>
-          <div className="flex justify-center gap-4">
-            <Button 
-              size="lg"
-              onClick={onPleaseWait}
-              className="btn-gradient px-8 py-4 text-lg font-semibold hover:-translate-y-0.5 transition-all duration-200"
-              aria-live="polite"
-            >
-              Please Wait
-            </Button>
-          </div>
-          <div className="flex items-center justify-center gap-6 text-sm text-muted-foreground">
-            <div>
-              Time elapsed: <span className="font-medium tabular-nums text-foreground">{formatted}</span>
-            </div>
-            <div>
-              Coins: <span className="font-medium tabular-nums text-foreground">{count}</span>
-            </div>
-          </div>
-          <div className="flex justify-center gap-2">
-            <Button variant="outline" size="sm" onClick={() => { resetTimer(); resetCount(); toast('Reset complete') }}>
-              Reset
-            </Button>
-            <Button variant="outline" size="sm" onClick={() => { inc(); toast('Coin added') }}>
-              Add Coin
-            </Button>
-          </div>
+            {todos.length > 0 && (
+              <div className="flex sm:hidden items-center justify-center space-x-2 p-2 bg-card rounded-lg shadow-sm mt-4">
+                <Button variant={filter === 'all' ? 'secondary' : 'ghost'} size="sm" onClick={() => setFilter('all')}>All</Button>
+                <Button variant={filter === 'active' ? 'secondary' : 'ghost'} size="sm" onClick={() => setFilter('active')}>Active</Button>
+                <Button variant={filter === 'completed' ? 'secondary' : 'ghost'} size="sm" onClick={() => setFilter('completed')}>Completed</Button>
+              </div>
+            )}
+          </main>
         </div>
-        <footer className="absolute bottom-8 text-center text-muted-foreground/80">
-          <p>Powered by Cloudflare</p>
+        <footer className="w-full text-center py-6 text-xs text-muted-foreground">
+          <p>Built with ❤️ at Cloudflare</p>
         </footer>
-        <Toaster richColors closeButton />
       </div>
-    </AppLayout>
-  )
+    </>
+  );
 }
