@@ -244,7 +244,7 @@ export function TodoItem({ todo, updateTodoMutation, deleteTodoMutation, isFirst
             <AlertDialogTitle>Are you absolutely sure?</AlertDialogTitle>
             <AlertDialogDescription>
               This action cannot be undone. This will permanently delete this task.
-            </ADCDescription>
+            </AlertDialogDescription>
           </AlertDialogHeader>
           <AlertDialogFooter>
             <AlertDialogCancel>Cancel</AlertDialogCancel>

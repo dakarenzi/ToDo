@@ -13,6 +13,7 @@ import { Input } from '@/components/ui/input';
 import { Popover, PopoverContent, PopoverTrigger } from '@/components/ui/popover';
 import { Calendar } from '@/components/ui/calendar';
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@/components/ui/select';
+import { Accordion, AccordionContent, AccordionItem, AccordionTrigger } from '@/components/ui/accordion';
 import {
   AlertDialog,
   AlertDialogAction,
@@ -27,6 +28,10 @@ import { cn } from '@/lib/utils';
 import { TodoItem } from '@/components/TodoItem';
 import type { Todo, ApiResponse, Priority } from '@shared/types';
 type FilterType = 'all' | 'active' | 'completed';
+type SortByType = 'manual' | 'dueDate' | 'priority' | 'createdAt';
+type GroupByType = 'none' | 'priority' | 'dueDate';
+const priorityOrder: Record<Priority, number> = { high: 3, medium: 2, low: 1, none: 0 };
+const priorityLabels: Record<Priority, string> = { high: 'High', medium: 'Medium', low: 'Low', none: 'No Priority' };
 const fetchTodos = async (): Promise<Todo[]> => {
   const res = await fetch('/api/todos');
   if (!res.ok) throw new Error('Network response was not ok');
@@ -55,6 +60,8 @@ export function HomePage() {
   const [newTags, setNewTags] = useState('');
   const [filter, setFilter] = useState<FilterType>('all');
   const [searchTerm, setSearchTerm] = useState('');
+  const [sortBy, setSortBy] = useState<SortByType>('manual');
+  const [groupBy, setGroupBy] = useState<GroupByType>('none');
   const [isClearConfirmOpen, setClearConfirmOpen] = useState(false);
   const { data: todos = [], isLoading, isError } = useQuery<Todo[]>({
     queryKey: ['todos'],
@@ -128,19 +135,52 @@ export function HomePage() {
       setNewTags('');
     }
   };
-  const filteredTodos = useMemo(() => {
-    let filtered = todos;
-    if (filter === 'active') filtered = todos.filter(t => !t.completed);
-    if (filter === 'completed') filtered = todos.filter(t => t.completed);
+  const processedTodos = useMemo(() => {
+    let processed = [...todos];
+    // 1. Filter
+    if (filter === 'active') processed = processed.filter(t => !t.completed);
+    if (filter === 'completed') processed = processed.filter(t => t.completed);
     if (searchTerm) {
       const lowercasedFilter = searchTerm.toLowerCase();
-      filtered = filtered.filter(todo =>
+      processed = processed.filter(todo =>
         todo.text.toLowerCase().includes(lowercasedFilter) ||
         (todo.tags && todo.tags.some(tag => tag.toLowerCase().includes(lowercasedFilter)))
       );
     }
-    return filtered;
-  }, [todos, filter, searchTerm]);
+    // 2. Sort
+    if (sortBy !== 'manual') {
+      processed.sort((a, b) => {
+        switch (sortBy) {
+          case 'dueDate':
+            if (!a.dueDate && !b.dueDate) return 0;
+            if (!a.dueDate) return 1;
+            if (!b.dueDate) return -1;
+            return new Date(a.dueDate).getTime() - new Date(b.dueDate).getTime();
+          case 'priority':
+            return (priorityOrder[b.priority || 'none']) - (priorityOrder[a.priority || 'none']);
+          case 'createdAt':
+            return new Date(b.createdAt).getTime() - new Date(a.createdAt).getTime();
+          default:
+            return 0;
+        }
+      });
+    }
+    // 3. Group
+    if (groupBy !== 'none') {
+      return processed.reduce((acc, todo) => {
+        let key = 'Uncategorized';
+        if (groupBy === 'priority') {
+          key = priorityLabels[todo.priority || 'none'];
+        } else if (groupBy === 'dueDate') {
+          key = todo.dueDate ? format(new Date(todo.dueDate), 'PPP') : 'No Due Date';
+        }
+        if (!acc[key]) acc[key] = [];
+        acc[key].push(todo);
+        return acc;
+      }, {} as Record<string, Todo[]>);
+    }
+    return processed;
+  }, [todos, filter, searchTerm, sortBy, groupBy]);
   const activeCount = useMemo(() => todos.filter(t => !t.completed).length, [todos]);
   const completedCount = todos.length - activeCount;
   const sensors = useSensors(
@@ -159,6 +199,19 @@ export function HomePage() {
       reorderTodosMutation.mutate(reorderedTodos.map(t => t.id));
     }
   }
+  const renderTodoList = (todoList: Todo[]) => (
+    <AnimatePresence>
+      {todoList.map((todo, index) => (
+        <TodoItem
+          key={todo.id}
+          todo={todo}
+          updateTodoMutation={updateTodoMutation}
+          deleteTodoMutation={deleteTodoMutation}
+          isFirst={index === 0}
+        />
+      ))}
+    </AnimatePresence>
+  );
   return (
     <>
       <Toaster richColors position="bottom-right" />
@@ -229,15 +282,40 @@ export function HomePage() {
                 <Input type="time" value={endTime} onChange={e => setEndTime(e.target.value)} className="h-11" />
               </div>
             </form>
-            <div className="relative">
-              <Search className="absolute left-3 top-1/2 -translate-y-1/2 h-4 w-4 text-muted-foreground" />
-              <Input
-                type="text"
-                placeholder="Search tasks or tags..."
-                value={searchTerm}
-                onChange={(e) => setSearchTerm(e.target.value)}
-                className="pl-9 w-full h-11"
-              />
+            <div className="space-y-4">
+              <div className="relative">
+                <Search className="absolute left-3 top-1/2 -translate-y-1/2 h-4 w-4 text-muted-foreground" />
+                <Input
+                  type="text"
+                  placeholder="Search tasks or tags..."
+                  value={searchTerm}
+                  onChange={(e) => setSearchTerm(e.target.value)}
+                  className="pl-9 w-full h-11"
+                />
+              </div>
+              <div className="grid grid-cols-1 sm:grid-cols-2 gap-2">
+                <Select value={sortBy} onValueChange={(v) => setSortBy(v as SortByType)}>
+                  <SelectTrigger className="h-11">
+                    <SelectValue placeholder="Sort by" />
+                  </SelectTrigger>
+                  <SelectContent>
+                    <SelectItem value="manual">Sort: Manual</SelectItem>
+                    <SelectItem value="dueDate">Sort: Due Date</SelectItem>
+                    <SelectItem value="priority">Sort: Priority</SelectItem>
+                    <SelectItem value="createdAt">Sort: Creation Date</SelectItem>
+                  </SelectContent>
+                </Select>
+                <Select value={groupBy} onValueChange={(v) => setGroupBy(v as GroupByType)}>
+                  <SelectTrigger className="h-11">
+                    <SelectValue placeholder="Group by" />
+                  </SelectTrigger>
+                  <SelectContent>
+                    <SelectItem value="none">Group: None</SelectItem>
+                    <SelectItem value="dueDate">Group: By Due Date</SelectItem>
+                    <SelectItem value="priority">Group: By Priority</SelectItem>
+                  </SelectContent>
+                </Select>
+              </div>
             </div>
             <div className="bg-card rounded-lg shadow-sm overflow-hidden">
               {isLoading && <div className="p-6 text-center text-muted-foreground">Loading tasks...</div>}
@@ -249,21 +327,31 @@ export function HomePage() {
                   <p>Your task list is empty. Add a task to get started.</p>
                 </div>
               )}
-              <DndContext sensors={sensors} collisionDetection={closestCenter} onDragEnd={handleDragEnd}>
-                <SortableContext items={filteredTodos.map(t => t.id)} strategy={verticalListSortingStrategy}>
-                  <AnimatePresence>
-                    {filteredTodos.map((todo, index) => (
-                      <TodoItem
-                        key={todo.id}
-                        todo={todo}
-                        updateTodoMutation={updateTodoMutation}
-                        deleteTodoMutation={deleteTodoMutation}
-                        isFirst={index === 0}
-                      />
-                    ))}
-                  </AnimatePresence>
-                </SortableContext>
-              </DndContext>
+              {sortBy !== 'manual' && groupBy === 'none' && (
+                <div className="p-2 text-center text-xs text-muted-foreground bg-accent">
+                  Drag-and-drop is disabled while a sort order is active.
+                </div>
+              )}
+              {Array.isArray(processedTodos) ? (
+                <DndContext sensors={sensors} collisionDetection={closestCenter} onDragEnd={handleDragEnd} enabled={sortBy === 'manual'}>
+                  <SortableContext items={processedTodos.map(t => t.id)} strategy={verticalListSortingStrategy} disabled={sortBy !== 'manual'}>
+                    {renderTodoList(processedTodos)}
+                  </SortableContext>
+                </DndContext>
+              ) : (
+                <Accordion type="multiple" className="w-full" defaultValue={Object.keys(processedTodos)}>
+                  {Object.entries(processedTodos).map(([groupTitle, groupTodos]) => (
+                    <AccordionItem value={groupTitle} key={groupTitle}>
+                      <AccordionTrigger className="px-4 py-3 text-sm font-medium hover:bg-accent">
+                        {groupTitle} ({groupTodos.length})
+                      </AccordionTrigger>
+                      <AccordionContent className="border-t">
+                        {renderTodoList(groupTodos)}
+                      </AccordionContent>
+                    </AccordionItem>
+                  ))}
+                </Accordion>
+              )}
               {todos.length > 0 && (
                 <footer className="flex items-center justify-between p-3 text-sm text-muted-foreground border-t">
                   <span>{activeCount} {activeCount === 1 ? 'item' : 'items'} left</span>
