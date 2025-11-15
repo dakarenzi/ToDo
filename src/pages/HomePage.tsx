@@ -19,7 +19,7 @@ const fetchTodos = async (): Promise<Todo[]> => {
   if (!data.success) throw new Error(data.error || 'Failed to fetch todos');
   return data.data || [];
 };
-const apiCall = async <T>(url: string, method: string, body?: T): Promise<Todo[]> => {
+const apiCall = async <T,>(url: string, method: string, body?: T): Promise<Todo[]> => {
   const res = await fetch(url, {
     method,
     headers: { 'Content-Type': 'application/json' },
