@@ -3,6 +3,7 @@ import { z } from 'zod';
 import { zValidator } from '@hono/zod-validator';
 import { Env } from './core-utils';
 import type { Todo, ApiResponse } from '@shared/types';
+const priorityEnum = z.enum(['none', 'low', 'medium', 'high']);
 const todoSchema = z.object({
     id: z.string(),
     text: z.string().min(1),
@@ -12,6 +13,8 @@ const todoSchema = z.object({
     startTime: z.string().optional(),
     endTime: z.string().optional(),
     order: z.number().optional(),
+    priority: priorityEnum.optional(),
+    tags: z.array(z.string()).optional(),
 });
 const updateTodoSchema = z.object({
     text: z.string().min(1).optional(),
@@ -19,6 +22,8 @@ const updateTodoSchema = z.object({
     dueDate: z.string().optional(),
     startTime: z.string().optional(),
     endTime: z.string().optional(),
+    priority: priorityEnum.optional(),
+    tags: z.array(z.string()).optional(),
 });
 const reorderSchema = z.object({
     orderedIds: z.array(z.string()),

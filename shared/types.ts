@@ -8,6 +8,7 @@ export interface ApiResponse<T = unknown> {
   data?: T;
   error?: string;
 }
+export type Priority = 'none' | 'low' | 'medium' | 'high';
 export interface Todo {
   id: string;
   text: string;
@@ -17,4 +18,6 @@ export interface Todo {
   startTime?: string;
   endTime?: string;
   order?: number;
+  priority?: Priority;
+  tags?: string[];
 }

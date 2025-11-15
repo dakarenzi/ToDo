@@ -1,7 +1,7 @@
 import React, { useState, useEffect } from 'react';
 import { motion } from 'framer-motion';
 import { format } from 'date-fns';
-import { Calendar as CalendarIcon, Clock, X, Save, Edit, GripVertical } from 'lucide-react';
+import { Calendar as CalendarIcon, Clock, X, Save, Edit, GripVertical, Flag } from 'lucide-react';
 import { UseMutationResult } from '@tanstack/react-query';
 import { useSortable } from '@dnd-kit/sortable';
 import { CSS } from '@dnd-kit/utilities';
@@ -10,6 +10,8 @@ import { Input } from '@/components/ui/input';
 import { Checkbox } from '@/components/ui/checkbox';
 import { Popover, PopoverContent, PopoverTrigger } from '@/components/ui/popover';
 import { Calendar } from '@/components/ui/calendar';
+import { Badge } from '@/components/ui/badge';
+import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@/components/ui/select';
 import {
   AlertDialog,
   AlertDialogAction,
@@ -21,13 +23,19 @@ import {
   AlertDialogTitle,
 } from "@/components/ui/alert-dialog";
 import { cn } from '@/lib/utils';
-import type { Todo } from '@shared/types';
+import type { Todo, Priority } from '@shared/types';
 interface TodoItemProps {
   todo: Todo;
   updateTodoMutation: UseMutationResult<Todo[], Error, Partial<Todo> & { id: string }, unknown>;
   deleteTodoMutation: UseMutationResult<Todo[], Error, string, unknown>;
   isFirst: boolean;
 }
+const priorityConfig: Record<Priority, { color: string; label: string }> = {
+  none: { color: 'text-muted-foreground', label: 'No Priority' },
+  low: { color: 'text-blue-500', label: 'Low' },
+  medium: { color: 'text-yellow-500', label: 'Medium' },
+  high: { color: 'text-red-500', label: 'High' },
+};
 export function TodoItem({ todo, updateTodoMutation, deleteTodoMutation, isFirst }: TodoItemProps) {
   const [isEditing, setIsEditing] = useState(false);
   const [editText, setEditText] = useState(todo.text);
@@ -36,6 +44,8 @@ export function TodoItem({ todo, updateTodoMutation, deleteTodoMutation, isFirst
   );
   const [editStartTime, setEditStartTime] = useState(todo.startTime || '');
   const [editEndTime, setEditEndTime] = useState(todo.endTime || '');
+  const [editPriority, setEditPriority] = useState<Priority>(todo.priority || 'none');
+  const [editTags, setEditTags] = useState((todo.tags || []).join(', '));
   const [isDeleteConfirmOpen, setDeleteConfirmOpen] = useState(false);
   const {
     attributes,
@@ -56,15 +66,20 @@ export function TodoItem({ todo, updateTodoMutation, deleteTodoMutation, isFirst
       setEditDueDate(todo.dueDate ? new Date(todo.dueDate) : undefined);
       setEditStartTime(todo.startTime || '');
       setEditEndTime(todo.endTime || '');
+      setEditPriority(todo.priority || 'none');
+      setEditTags((todo.tags || []).join(', '));
     }
   }, [isEditing, todo]);
   const handleSave = () => {
     if (editText.trim()) {
+      const tags = editTags.split(',').map(tag => tag.trim()).filter(Boolean);
       const hasChanges =
         editText.trim() !== todo.text ||
         (editDueDate?.toISOString() || undefined) !== todo.dueDate ||
         (editStartTime || undefined) !== todo.startTime ||
-        (editEndTime || undefined) !== todo.endTime;
+        (editEndTime || undefined) !== todo.endTime ||
+        editPriority !== (todo.priority || 'none') ||
+        editTags !== (todo.tags || []).join(', ');
       if (hasChanges) {
         updateTodoMutation.mutate({
           id: todo.id,
@@ -72,6 +87,8 @@ export function TodoItem({ todo, updateTodoMutation, deleteTodoMutation, isFirst
           dueDate: editDueDate?.toISOString(),
           startTime: editStartTime || undefined,
           endTime: editEndTime || undefined,
+          priority: editPriority,
+          tags: tags.length > 0 ? tags : [],
         });
       }
       setIsEditing(false);
@@ -115,6 +132,26 @@ export function TodoItem({ todo, updateTodoMutation, deleteTodoMutation, isFirst
                   if (e.key === 'Escape') handleCancel();
                 }}
               />
+              <div className="grid grid-cols-1 sm:grid-cols-2 gap-2">
+                <Input
+                  type="text"
+                  value={editTags}
+                  onChange={e => setEditTags(e.target.value)}
+                  placeholder="Tags (comma-separated)"
+                  className="h-10"
+                />
+                <Select value={editPriority} onValueChange={(v) => setEditPriority(v as Priority)}>
+                  <SelectTrigger className="h-10">
+                    <SelectValue placeholder="Set priority" />
+                  </SelectTrigger>
+                  <SelectContent>
+                    <SelectItem value="none">No Priority</SelectItem>
+                    <SelectItem value="low">Low</SelectItem>
+                    <SelectItem value="medium">Medium</SelectItem>
+                    <SelectItem value="high">High</SelectItem>
+                  </SelectContent>
+                </Select>
+              </div>
               <div className="grid grid-cols-1 sm:grid-cols-3 gap-2">
                 <Popover>
                   <PopoverTrigger asChild>
@@ -158,14 +195,24 @@ export function TodoItem({ todo, updateTodoMutation, deleteTodoMutation, isFirst
                 >
                   {todo.text}
                 </label>
-                {(todo.dueDate || (todo.startTime && todo.endTime)) && (
-                  <div className="text-xs text-muted-foreground mt-1 flex items-center gap-2 flex-wrap">
-                    {todo.dueDate && (
-                      <span className="flex items-center gap-1"><CalendarIcon className="h-3 w-3" /> {format(new Date(todo.dueDate), "MMM d")}</span>
-                    )}
-                    {todo.startTime && todo.endTime && (
-                      <span className="flex items-center gap-1"><Clock className="h-3 w-3" /> {todo.startTime} - {todo.endTime}</span>
-                    )}
+                <div className="text-xs text-muted-foreground mt-1 flex items-center gap-3 flex-wrap">
+                  {todo.priority && todo.priority !== 'none' && (
+                    <span className={cn("flex items-center gap-1", priorityConfig[todo.priority].color)}>
+                      <Flag className="h-3 w-3" /> {priorityConfig[todo.priority].label}
+                    </span>
+                  )}
+                  {todo.dueDate && (
+                    <span className="flex items-center gap-1"><CalendarIcon className="h-3 w-3" /> {format(new Date(todo.dueDate), "MMM d")}</span>
+                  )}
+                  {todo.startTime && todo.endTime && (
+                    <span className="flex items-center gap-1"><Clock className="h-3 w-3" /> {todo.startTime} - {todo.endTime}</span>
+                  )}
+                </div>
+                {todo.tags && todo.tags.length > 0 && (
+                  <div className="mt-2 flex items-center gap-1 flex-wrap">
+                    {todo.tags.map(tag => (
+                      <Badge key={tag} variant="secondary">{tag}</Badge>
+                    ))}
                   </div>
                 )}
               </div>
@@ -197,7 +244,7 @@ export function TodoItem({ todo, updateTodoMutation, deleteTodoMutation, isFirst
             <AlertDialogTitle>Are you absolutely sure?</AlertDialogTitle>
             <AlertDialogDescription>
               This action cannot be undone. This will permanently delete this task.
-            </AlertDialogDescription>
+            </ADCDescription>
           </AlertDialogHeader>
           <AlertDialogFooter>
             <AlertDialogCancel>Cancel</AlertDialogCancel>

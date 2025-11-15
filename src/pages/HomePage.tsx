@@ -2,7 +2,7 @@ import React, { useState, useMemo } from 'react';
 import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query';
 import { AnimatePresence } from 'framer-motion';
 import { v4 as uuidv4 } from 'uuid';
-import { Check, Plus, Calendar as CalendarIcon } from 'lucide-react';
+import { Check, Plus, Calendar as CalendarIcon, Search } from 'lucide-react';
 import { Toaster, toast } from 'sonner';
 import { format } from 'date-fns';
 import { DndContext, closestCenter, KeyboardSensor, PointerSensor, useSensor, useSensors, DragEndEvent } from '@dnd-kit/core';
@@ -12,6 +12,7 @@ import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
 import { Popover, PopoverContent, PopoverTrigger } from '@/components/ui/popover';
 import { Calendar } from '@/components/ui/calendar';
+import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@/components/ui/select';
 import {
   AlertDialog,
   AlertDialogAction,
@@ -24,7 +25,7 @@ import {
 } from "@/components/ui/alert-dialog";
 import { cn } from '@/lib/utils';
 import { TodoItem } from '@/components/TodoItem';
-import type { Todo, ApiResponse } from '@shared/types';
+import type { Todo, ApiResponse, Priority } from '@shared/types';
 type FilterType = 'all' | 'active' | 'completed';
 const fetchTodos = async (): Promise<Todo[]> => {
   const res = await fetch('/api/todos');
@@ -50,7 +51,10 @@ export function HomePage() {
   const [dueDate, setDueDate] = useState<Date | undefined>();
   const [startTime, setStartTime] = useState('');
   const [endTime, setEndTime] = useState('');
+  const [newPriority, setNewPriority] = useState<Priority>('none');
+  const [newTags, setNewTags] = useState('');
   const [filter, setFilter] = useState<FilterType>('all');
+  const [searchTerm, setSearchTerm] = useState('');
   const [isClearConfirmOpen, setClearConfirmOpen] = useState(false);
   const { data: todos = [], isLoading, isError } = useQuery<Todo[]>({
     queryKey: ['todos'],
@@ -104,6 +108,7 @@ export function HomePage() {
   const handleAddTodo = (e: React.FormEvent) => {
     e.preventDefault();
     if (newTodoText.trim()) {
+      const tags = newTags.split(',').map(tag => tag.trim()).filter(Boolean);
       addTodoMutation.mutate({
         id: uuidv4(),
         text: newTodoText.trim(),
@@ -112,18 +117,30 @@ export function HomePage() {
         dueDate: dueDate?.toISOString(),
         startTime: startTime || undefined,
         endTime: endTime || undefined,
+        priority: newPriority,
+        tags: tags.length > 0 ? tags : undefined,
       });
       setNewTodoText('');
       setDueDate(undefined);
       setStartTime('');
       setEndTime('');
+      setNewPriority('none');
+      setNewTags('');
     }
   };
   const filteredTodos = useMemo(() => {
-    if (filter === 'active') return todos.filter(t => !t.completed);
-    if (filter === 'completed') return todos.filter(t => t.completed);
-    return todos;
-  }, [todos, filter]);
+    let filtered = todos;
+    if (filter === 'active') filtered = todos.filter(t => !t.completed);
+    if (filter === 'completed') filtered = todos.filter(t => t.completed);
+    if (searchTerm) {
+      const lowercasedFilter = searchTerm.toLowerCase();
+      filtered = filtered.filter(todo =>
+        todo.text.toLowerCase().includes(lowercasedFilter) ||
+        (todo.tags && todo.tags.some(tag => tag.toLowerCase().includes(lowercasedFilter)))
+      );
+    }
+    return filtered;
+  }, [todos, filter, searchTerm]);
   const activeCount = useMemo(() => todos.filter(t => !t.completed).length, [todos]);
   const completedCount = todos.length - activeCount;
   const sensors = useSensors(
@@ -165,6 +182,26 @@ export function HomePage() {
                   className="pl-12 h-14 text-lg rounded-lg shadow-sm focus:ring-2 focus:ring-blue-500 focus:ring-offset-2 focus:ring-offset-background"
                 />
               </div>
+              <div className="grid grid-cols-1 sm:grid-cols-2 gap-2">
+                <Input
+                  type="text"
+                  value={newTags}
+                  onChange={e => setNewTags(e.target.value)}
+                  placeholder="Tags (comma-separated)"
+                  className="h-11"
+                />
+                <Select value={newPriority} onValueChange={(v) => setNewPriority(v as Priority)}>
+                  <SelectTrigger className="h-11">
+                    <SelectValue placeholder="Set priority" />
+                  </SelectTrigger>
+                  <SelectContent>
+                    <SelectItem value="none">No Priority</SelectItem>
+                    <SelectItem value="low">Low</SelectItem>
+                    <SelectItem value="medium">Medium</SelectItem>
+                    <SelectItem value="high">High</SelectItem>
+                  </SelectContent>
+                </Select>
+              </div>
               <div className="grid grid-cols-1 sm:grid-cols-3 gap-2">
                 <Popover>
                   <PopoverTrigger asChild>
@@ -192,6 +229,16 @@ export function HomePage() {
                 <Input type="time" value={endTime} onChange={e => setEndTime(e.target.value)} className="h-11" />
               </div>
             </form>
+            <div className="relative">
+              <Search className="absolute left-3 top-1/2 -translate-y-1/2 h-4 w-4 text-muted-foreground" />
+              <Input
+                type="text"
+                placeholder="Search tasks or tags..."
+                value={searchTerm}
+                onChange={(e) => setSearchTerm(e.target.value)}
+                className="pl-9 w-full h-11"
+              />
+            </div>
             <div className="bg-card rounded-lg shadow-sm overflow-hidden">
               {isLoading && <div className="p-6 text-center text-muted-foreground">Loading tasks...</div>}
               {isError && <div className="p-6 text-center text-red-500">Error loading tasks.</div>}
@@ -247,7 +294,7 @@ export function HomePage() {
           </main>
         </div>
         <footer className="w-full text-center py-6 text-xs text-muted-foreground">
-          <p>Built with ❤�� at Cloudflare</p>
+          <p>Built with ❤️ at Cloudflare</p>
         </footer>
       </div>
       <AlertDialog open={isClearConfirmOpen} onOpenChange={setClearConfirmOpen}>
